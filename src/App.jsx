@@ -10,7 +10,7 @@ function getPosterUrl(path) {
 }
 
 
-// 1) A CONEXÃO 
+// A CONEXÃO 
 async function buscarPopulares() {
   const url = `${BASE_URL}/movie/popular?api_key=${API_KEY}&language=pt-BR`;
   const resposta = await fetch(url);
@@ -32,6 +32,15 @@ async function buscarPorTitulo(titulo) {
   return dados.results || [];
 }
 
+async function buscarElenco(id) { const url = `${BASE_URL}/movie/${id}/credits?api_key=${API_KEY}&language=pt-BR`; 
+const resposta = await fetch(url);
+ const dados = await resposta.json(); return dados.cast || []; }
+  async function buscarTrailer(id) { const url = `${BASE_URL}/movie/${id}/videos?api_key=${API_KEY}&language=pt-BR`;
+   const resposta = await fetch(url);
+    const dados = await resposta.json(); 
+    const trailer = (dados.results || []).find( (v) => v.site === 'YouTube' && v.type === 'Trailer' );
+     return trailer ? trailer.key : null; }
+
 // COMPONENTE PRINCIPAL
 export default function App() {
   const [modo, setModo] = useState('popular'); 
@@ -39,8 +48,12 @@ export default function App() {
   const [termoBusca, setTermoBusca] = useState('');
   const [filmes, setFilmes] = useState([]);
   const [filmeSelecionado, setFilmeSelecionado] = useState(null);
+   const [elenco, setElenco] = useState([]);
+    const [trailerKey, setTrailerKey] = useState(null); 
+    const [carregandoDetalhes, setCarregandoDetalhes] = useState(false);
+     const [videoTelaCheia, setVideoTelaCheia] = useState(false); 
 
-  // 3) A EXPERIÊNCIA — estados de carregamento e erro
+  // — estados de carregamento e erro
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
 
@@ -78,8 +91,13 @@ export default function App() {
       setCarregando(false);
     }
   }
-
-  // 4) A INTERAÇÃO — busca por título
+useEffect(() => { if (!filmeSelecionado) return; 
+  async function carregarDetalhes() { setCarregandoDetalhes(true);
+    setElenco([]); setTrailerKey(null); 
+    try { const [listaElenco, chaveTrailer] = 
+      await Promise.all([ buscarElenco(filmeSelecionado.id), 
+        buscarTrailer(filmeSelecionado.id), ]); setElenco(listaElenco.slice(0, 6)); setTrailerKey(chaveTrailer); } catch (e) { setElenco([]); setTrailerKey(null); } finally { setCarregandoDetalhes(false); } } carregarDetalhes(); }, [filmeSelecionado]);
+  // busca por título
   function handleBuscar(event) {
     event.preventDefault();
     if (!campoBusca.trim()) return;
@@ -87,7 +105,7 @@ export default function App() {
     setTermoBusca(campoBusca.trim());
   }
 
-  // 4) A INTERAÇÃO — troca de filtro (populares / em cartaz)
+  //troca de filtro (populares / em cartaz)
   function handleFiltro(novoModo) {
     setCampoBusca('');
     setTermoBusca('');
@@ -97,7 +115,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="marquee">
-        <p className="marquee__eyebrow">Cine Fetch</p>
+        <p className="marquee__eyebrow"> You cine</p>
         <h1 className="marquee__title">O que está em cartaz hoje?</h1>
 
         <div className="search-bar">
@@ -197,17 +215,64 @@ export default function App() {
           </div>
         )}
       </main>
-       {filmeSelecionado && (
+      {filmeSelecionado && (
         <div className="modal-overlay" onClick={() => setFilmeSelecionado(null)}>
           <div className="modal-box" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close" onClick={() => setFilmeSelecionado(null)}>×</button>
+              <div className="modal-top-row">
             <img src={getPosterUrl(filmeSelecionado.poster_path)} alt={filmeSelecionado.title} className="modal-poster" />
             <div className="modal-info">
               <h2>{filmeSelecionado.title}</h2>
-              <p className="modal-meta">{filmeSelecionado.release_date?.slice(0,4)} · ★ {filmeSelecionado.vote_average?.toFixed(1)}</p>
+              <p className="modal-meta">{filmeSelecionado.release_date?.slice(0, 8)} · ★ {filmeSelecionado.vote_average?.toFixed(1)}</p>
               <p className="modal-overview">{filmeSelecionado.overview || 'Sem sinopse disponível.'}</p>
+
+              {carregandoDetalhes && (
+                <p className="modal-loading">Carregando elenco e trailer...</p>
+              )}
+
+              {!carregandoDetalhes && elenco.length > 0 && (
+                <div className="modal-cast">
+                  <h3>Elenco</h3>
+                  <ul>
+                    {elenco.map((ator) => (
+                      <li key={ator.id}>{ator.name}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+               </div>
+               </div>
+              {!carregandoDetalhes && trailerKey && (
+                <div className="modal-trailer">
+                  <h3>Trailer</h3>
+                  <button type="button" className="modal-trailer__thumb" onClick={() => setVideoTelaCheia(true)}>
+                    <img src={`https://img.youtube.com/vi/${trailerKey}/hqdefault.jpg`} alt="Miniatura do trailer" />
+                    <span className="modal-trailer__play">▶</span>
+                  </button>
+                </div>
+              )}
+
+              {!carregandoDetalhes && !trailerKey && (
+                <p className="modal-no-trailer">Trailer não disponível.</p>
+              )}
             </div>
           </div>
+       
+      )}
+
+      {videoTelaCheia && trailerKey && (
+        <div className="video-overlay" onClick={() => setVideoTelaCheia(false)}>
+          <button type="button" className="video-overlay__close" onClick={() => setVideoTelaCheia(false)}>
+            ×
+          </button>
+          <iframe
+            className="video-overlay__iframe"
+            src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1`}
+            title="Trailer em tela cheia"
+            allow="autoplay; fullscreen"
+            allowFullScreen
+            onClick={(e) => e.stopPropagation()}
+          ></iframe>
         </div>
       )}
     </div>
